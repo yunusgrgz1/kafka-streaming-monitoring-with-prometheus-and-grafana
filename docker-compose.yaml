@@ -1,0 +1,146 @@
+version: '3.8'
+services:
+  zookeeper:
+    image: bitnami/zookeeper:3.8.3
+    environment:
+      - ALLOW_ANONYMOUS_LOGIN=yes
+    ports:
+      - '2181:2181'
+
+  kafka-1:
+    image: bitnami/kafka:3.3.1
+    container_name: kafka-1
+    environment:
+      - KAFKA_BROKER_ID=1
+      - KAFKA_ZOOKEEPER_CONNECT=zookeeper:2181
+      - KAFKA_LISTENERS=PLAINTEXT://:9092
+      - KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka-1:9092
+      - KAFKA_HEAP_OPTS=-Xms1G -Xmx1G
+      - KAFKA_DEFAULT_REPLICATION_FACTOR=20
+      - KAFKA_MIN_INSYNC_REPLICAS=2
+      - KAFKA_NUM_PARTITIONS=1
+      - KAFKA_LOG_RETENTION_HOURS=168
+      - KAFKA_LOG_SEGMENT_BYTES=1073741824
+      - KAFKA_LOG_RETENTION_CHECK_INTERVAL_MS=300000
+      - ALLOW_PLAINTEXT_LISTENER=yes
+      - KAFKA_JMX_PORT=9404
+      - KAFKA_JMX_HOSTNAME=0.0.0.0
+    ports:
+      - '9092:9092'
+      - '9404:9404'
+    volumes:
+      - ./jmx_exporter/jmx-exporter.jar:/opt/jmx-exporter/jmx-exporter.jar:ro
+      - ./jmx_exporter/kafka-2_0_0.yaml:/opt/jmx-exporter/config.yml:ro
+    command: >
+      sh -c "export KAFKA_OPTS='-javaagent:/opt/jmx-exporter/jmx-exporter.jar=9404:/opt/jmx-exporter/config.yml' && /opt/bitnami/scripts/kafka/run.sh"
+    depends_on:
+      - zookeeper
+
+  kafka-2:
+    image: bitnami/kafka:3.3.1
+    container_name: kafka-2
+    environment:
+      - KAFKA_BROKER_ID=2
+      - KAFKA_ZOOKEEPER_CONNECT=zookeeper:2181
+      - KAFKA_LISTENERS=PLAINTEXT://:9093
+      - KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka-2:9093
+      - KAFKA_HEAP_OPTS=-Xms1G -Xmx1G
+      - KAFKA_DEFAULT_REPLICATION_FACTOR=3
+      - KAFKA_MIN_INSYNC_REPLICAS=2
+      - KAFKA_NUM_PARTITIONS=20
+      - KAFKA_LOG_RETENTION_HOURS=168
+      - KAFKA_LOG_SEGMENT_BYTES=1073741824
+      - KAFKA_LOG_RETENTION_CHECK_INTERVAL_MS=300000
+      - ALLOW_PLAINTEXT_LISTENER=yes
+      - KAFKA_JMX_PORT=9404
+      - KAFKA_JMX_HOSTNAME=0.0.0.0
+    ports:
+      - '9093:9093'
+    volumes:
+      - ./jmx_exporter/jmx-exporter.jar:/opt/jmx-exporter/jmx-exporter.jar:ro
+      - ./jmx_exporter/kafka-2_0_0.yaml:/opt/jmx-exporter/config.yml:ro
+    command: >
+      sh -c "export KAFKA_OPTS='-javaagent:/opt/jmx-exporter/jmx-exporter.jar=9404:/opt/jmx-exporter/config.yml' && /opt/bitnami/scripts/kafka/run.sh"
+    depends_on:
+      - zookeeper
+
+  kafka-3:
+    image: bitnami/kafka:3.3.1
+    container_name: kafka-3
+    environment:
+      - KAFKA_BROKER_ID=3
+      - KAFKA_ZOOKEEPER_CONNECT=zookeeper:2181
+      - KAFKA_LISTENERS=PLAINTEXT://:9094
+      - KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka-3:9094
+      - KAFKA_HEAP_OPTS=-Xms1G -Xmx1G
+      - KAFKA_DEFAULT_REPLICATION_FACTOR=3
+      - KAFKA_MIN_INSYNC_REPLICAS=2
+      - KAFKA_NUM_PARTITIONS=20
+      - KAFKA_LOG_RETENTION_HOURS=168
+      - KAFKA_LOG_SEGMENT_BYTES=1073741824
+      - KAFKA_LOG_RETENTION_CHECK_INTERVAL_MS=300000
+      - ALLOW_PLAINTEXT_LISTENER=yes
+      - KAFKA_JMX_PORT=9404
+      - KAFKA_JMX_HOSTNAME=0.0.0.0
+    ports:
+      - '9094:9094'
+    volumes:
+      - ./jmx_exporter/jmx-exporter.jar:/opt/jmx-exporter/jmx-exporter.jar:ro
+      - ./jmx_exporter/kafka-2_0_0.yaml:/opt/jmx-exporter/config.yml:ro
+    command: >
+      sh -c "export KAFKA_OPTS='-javaagent:/opt/jmx-exporter/jmx-exporter.jar=9404:/opt/jmx-exporter/config.yml' && /opt/bitnami/scripts/kafka/run.sh"
+    depends_on:
+      - zookeeper
+
+
+  prometheus:
+    image: prom/prometheus:v2.43.0
+    volumes:
+      - ./prometheus/prometheus.yaml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - '9090:9090'
+    depends_on:
+      - kafka-1
+      - kafka-2
+      - kafka-3
+      - node-exporter
+
+  grafana:
+    image: grafana/grafana:9.3.2
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    ports:
+      - '3000:3000'
+    depends_on:
+      - prometheus
+
+  jupyter:
+    image: jupyter/base-notebook:python-3.11.5
+    volumes:
+      - ./notebooks:/home/jovyan/work
+    ports:
+      - '8888:8888'
+    command: start-notebook.sh --NotebookApp.token=''
+    depends_on:
+      - prometheus
+      - kafka-1
+      - kafka-2
+      - kafka-3
+
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: node-exporter
+    ports:
+      - '9100:9100'
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--path.rootfs=/rootfs'
+    restart: unless-stopped
